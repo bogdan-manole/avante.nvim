@@ -974,7 +974,7 @@ local function minimize_snippet(original_lines, snippet)
     local start_a, count_a, start_b, count_b = unpack(hunk)
     ---@type AvanteCodeSnippet
     local new_snippet = {
-      range = { start_line + start_a - 1, start_line + start_a + count_a - 2 },
+      range = { start_line + start_a - 1, start_line + start_a + math.max(count_a, 1) - 2 },
       content = table.concat(vim.list_slice(snippet_lines, start_b, start_b + count_b - 1), "\n"),
       lang = snippet.lang,
       explanation = snippet.explanation,
@@ -2429,7 +2429,7 @@ function Sidebar:create_selected_code_container()
       },
       buf_options = buf_options,
       win_options = {
-        winhl = base_win_options.winhl,
+        winhighlight = base_win_options.winhighlight,
       },
       size = {
         height = selected_code_size + 3,

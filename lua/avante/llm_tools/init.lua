@@ -25,7 +25,7 @@ function M.read_file_toplevel_symbols(opts, on_log)
   return definitions, nil
 end
 
----@type AvanteLLMToolFunc<{ command: "view" | "str_replace" | "create" | "insert" | "undo_edit", path: string, old_str?: string, new_str?: string, file_text?: string, insert_line?: integer, new_str?: string }>
+---@type AvanteLLMToolFunc<{ command: "view" | "str_replace" | "create" | "insert" | "undo_edit", path: string, old_str?: string, new_str?: string, file_text?: string, insert_line?: integer, new_str?: string, view_range?: integer[] }>
 function M.str_replace_editor(opts, on_log, on_complete)
   if on_log then on_log("command: " .. opts.command) end
   if on_log then on_log("path: " .. vim.inspect(opts.path)) end
@@ -42,14 +42,16 @@ function M.str_replace_editor(opts, on_log, on_complete)
     return bufnr
   end
   if opts.command == "view" then
-    if not Path:new(abs_path):exists() then return false, "File not found: " .. abs_path end
-    if not Path:new(abs_path):is_file() then return false, "Path is not a file: " .. abs_path end
-    local file = io.open(abs_path, "r")
-    if not file then return false, "file not found: " .. abs_path end
-    local lines = Utils.read_file_from_buf_or_disk(abs_path)
-    local content = lines and table.concat(lines, "\n") or ""
-    on_complete(content, nil)
-    return
+    local view = require("avante.llm_tools.view")
+    local opts_ = { path = opts.path }
+    if opts.view_range then
+      local start_line, end_line = unpack(opts.view_range)
+      opts_.view_range = {
+        start_line = start_line,
+        end_line = end_line,
+      }
+    end
+    return view(opts_, on_log, on_complete)
   end
   if opts.command == "str_replace" then
     if not Path:new(abs_path):exists() then return false, "File not found: " .. abs_path end
@@ -97,14 +99,20 @@ function M.str_replace_editor(opts, on_log, on_complete)
     for _, hunk in ipairs(patch) do
       local start_a, count_a, start_b, count_b = unpack(hunk)
       if current_start_a < start_a then
-        vim.list_extend(patched_new_lines, vim.list_slice(old_lines, current_start_a, start_a - 1))
+        if count_a > 0 then
+          vim.list_extend(patched_new_lines, vim.list_slice(old_lines, current_start_a, start_a - 1))
+        else
+          vim.list_extend(patched_new_lines, vim.list_slice(old_lines, current_start_a, start_a))
+        end
       end
       table.insert(patched_new_lines, patch_start_line_content)
-      vim.list_extend(patched_new_lines, vim.list_slice(old_lines, start_a, start_a + count_a - 1))
+      if count_a > 0 then
+        vim.list_extend(patched_new_lines, vim.list_slice(old_lines, start_a, start_a + count_a - 1))
+      end
       table.insert(patched_new_lines, "=======")
       vim.list_extend(patched_new_lines, vim.list_slice(new_lines, start_b, start_b + count_b - 1))
       table.insert(patched_new_lines, patch_end_line_content)
-      current_start_a = start_a + count_a
+      current_start_a = start_a + math.max(count_a, 1)
     end
     if current_start_a <= #old_lines then
       vim.list_extend(patched_new_lines, vim.list_slice(old_lines, current_start_a, #old_lines))
@@ -910,7 +918,7 @@ M._tools = {
       },
     },
   },
-  require("avante.llm_tools.read_file"),
+  require("avante.llm_tools.view"),
   {
     name = "read_global_file",
     description = "Read the contents of a file in the global scope. If the file content is already in the context, do not use this tool.",
